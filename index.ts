@@ -1,77 +1,47 @@
-export type Verdict = "BUY" | "OFFER" | "PASS";
+/** Cloudflare Worker entry point for the vinext-starter template. */
+import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
+import handler from "vinext/server/app-router-entry";
 
-export interface CardIdentification {
-  player: string;
-  sport: string;
-  year: number;
-  manufacturer: string;
-  set: string;
-  cardNumber: string;
-  parallel: string;
-  serialNumber: string | null;
-  rookie: boolean;
-  autograph: boolean;
-  memorabilia: boolean;
-  gradingCompany: string | null;
-  grade: string | null;
-  confidence: number;
+interface Env {
+  ASSETS: Fetcher;
+  DB: D1Database;
+  IMAGES: {
+    input(stream: ReadableStream): {
+      transform(options: Record<string, unknown>): {
+        output(options: { format: string; quality: number }): Promise<{ response(): Response }>;
+      };
+    };
+  };
 }
 
-export interface DetectedCard extends CardIdentification {
-  id: string;
-  imageUrl?: string;
-  searchQuery: string;
+interface ExecutionContext {
+  waitUntil(promise: Promise<unknown>): void;
+  passThroughOnException(): void;
 }
 
-export interface CompResult {
-  cardId: string;
-  recentSales: number[];
-  medianPrice: number;
-  averagePrice: number;
-  lowPrice: number;
-  highPrice: number;
-  sampleSize: number;
-  confidence: number;
-  source: string;
-  conservativeValue: number;
-}
+// Image security config. SVG sources with .svg extension auto-skip the
+// optimization endpoint on the client side (served directly, no proxy).
+// To route SVGs through the optimizer (with security headers), set
+// dangerouslyAllowSVG: true in next.config.js and uncomment below:
+// const imageConfig: ImageConfig = { dangerouslyAllowSVG: true };
 
-export interface AppSettings {
-  marketplace: string;
-  desiredRoi: number;
-  ebayFeePercent: number;
-  perOrderFee: number;
-  shippingCost: number;
-  suppliesCost: number;
-  conservativeDiscount: number;
-  defaultCondition: string;
-  currency: string;
-}
+const worker = {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
 
-export interface SaleEstimate {
-  marketValue: number;
-  conservativeValue: number;
-  sellingFees: number;
-  shipping: number;
-  supplies: number;
-  totalSellingCosts: number;
-  netProceeds: number;
-}
+    if (url.pathname === "/_vinext/image") {
+      const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
+      return handleImageOptimization(request, {
+        fetchAsset: (path) => env.ASSETS.fetch(new Request(new URL(path, request.url))),
+        transformImage: async (body, { width, format, quality }) => {
+          const result = await env.IMAGES.input(body).transform(width > 0 ? { width } : {}).output({ format, quality });
+          return result.response();
+        },
+      }, allowedWidths);
+    }
 
-export interface DealAnalysis extends SaleEstimate {
-  askingPrice: number;
-  expectedProfit: number;
-  roi: number;
-  idealBuyPrice: number;
-  maxBuyPrice: number;
-  verdict: Verdict;
-}
+    return handler.fetch(request, env, ctx);
+  },
+};
 
-export interface SavedAnalysis {
-  id: string;
-  date: string;
-  cards: DetectedCard[];
-  comps: CompResult[];
-  askingPrice: number;
-  deal: DealAnalysis;
-}
+export default worker;
