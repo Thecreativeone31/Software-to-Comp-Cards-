@@ -1,13 +1,77 @@
-import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
-import * as schema from "./schema";
+export type Verdict = "BUY" | "OFFER" | "PASS";
 
-export function getDb() {
-  if (!env.DB) {
-    throw new Error(
-      "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
-    );
-  }
+export interface CardIdentification {
+  player: string;
+  sport: string;
+  year: number;
+  manufacturer: string;
+  set: string;
+  cardNumber: string;
+  parallel: string;
+  serialNumber: string | null;
+  rookie: boolean;
+  autograph: boolean;
+  memorabilia: boolean;
+  gradingCompany: string | null;
+  grade: string | null;
+  confidence: number;
+}
 
-  return drizzle(env.DB, { schema });
+export interface DetectedCard extends CardIdentification {
+  id: string;
+  imageUrl?: string;
+  searchQuery: string;
+}
+
+export interface CompResult {
+  cardId: string;
+  recentSales: number[];
+  medianPrice: number;
+  averagePrice: number;
+  lowPrice: number;
+  highPrice: number;
+  sampleSize: number;
+  confidence: number;
+  source: string;
+  conservativeValue: number;
+}
+
+export interface AppSettings {
+  marketplace: string;
+  desiredRoi: number;
+  ebayFeePercent: number;
+  perOrderFee: number;
+  shippingCost: number;
+  suppliesCost: number;
+  conservativeDiscount: number;
+  defaultCondition: string;
+  currency: string;
+}
+
+export interface SaleEstimate {
+  marketValue: number;
+  conservativeValue: number;
+  sellingFees: number;
+  shipping: number;
+  supplies: number;
+  totalSellingCosts: number;
+  netProceeds: number;
+}
+
+export interface DealAnalysis extends SaleEstimate {
+  askingPrice: number;
+  expectedProfit: number;
+  roi: number;
+  idealBuyPrice: number;
+  maxBuyPrice: number;
+  verdict: Verdict;
+}
+
+export interface SavedAnalysis {
+  id: string;
+  date: string;
+  cards: DetectedCard[];
+  comps: CompResult[];
+  askingPrice: number;
+  deal: DealAnalysis;
 }
